@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant SIM as Telemetry Simulator
+    participant GRPC as gRPC Server
+    participant DB as Django ORM and Database
+    participant ML as ML Anomaly Engine
+    participant AGT as LangGraph Agent
+    participant MCP as FastMCP Server
+    participant CHAIN as TuniSovereignLedger
+
+    SIM->>GRPC: StreamTelemetry(node, metric, value, timestamp)
+    GRPC->>DB: create TelemetryReading (protocol gRPC)
+    GRPC->>ML: score latest readings of the node
+    ML->>DB: read recent readings (indexed by node, metric, timestamp)
+
+    alt Anomaly detected
+        ML->>DB: create AnomalyAndForecastEvent
+        ML->>AGT: trigger run (ANOMALY_ALERT)
+        AGT->>DB: create AgentLoopExecution (empty recommendation, confidence 0)
+        AGT->>MCP: call tool to read quota of the cooperative
+        MCP->>DB: read CooperativeUnit and ResourceNodePlot
+        DB-->>MCP: daily_quota_limit and allocated share
+        MCP-->>AGT: approved units proposal
+        loop Policy self-correction until proposal is within quota
+            AGT->>AGT: check proposal against max quota
+        end
+        AGT->>CHAIN: anchor salted commitment (Web3.py)
+        CHAIN-->>AGT: tx_hash and block_number
+        AGT->>DB: create OnChainZKReceipt (one per execution)
+        AGT->>DB: update final_recommendation and confidence_score
+    else Normal reading
+        ML-->>GRPC: no event
+    end
+
+    GRPC-->>SIM: acknowledgement

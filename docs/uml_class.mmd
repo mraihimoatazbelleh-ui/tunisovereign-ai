@@ -1,0 +1,122 @@
+classDiagram
+    direction LR
+
+    class AbstractUser {
+        <<Django>>
+    }
+
+    class StakeholderUser {
+        +Role role
+        +str governorate
+        +str wallet_address
+        +str preferred_dialect
+    }
+
+    class CooperativeUnit {
+        +UUID id
+        +str name
+        +str governorate
+        +str track_domain
+        +float daily_quota_limit
+        +str contract_address
+        +datetime created_at
+    }
+
+    class ResourceNodePlot {
+        +str node_code
+        +str crop_or_sector_type
+        +float allocated_share_pct
+        +bool is_valve_or_dispatch_active
+    }
+
+    class TelemetryReading {
+        +datetime timestamp
+        +MetricType metric_type
+        +float value
+        +Protocol ingestion_protocol
+    }
+
+    class AnomalyAndForecastEvent {
+        +datetime detected_at
+        +str anomaly_type
+        +Severity severity
+        +float isolation_forest_score
+        +float forecasted_deficit_24h
+    }
+
+    class AgentLoopExecution {
+        +str thread_id
+        +Trigger trigger_source
+        +str darja_transcript
+        +JSON parsed_intent_json
+        +JSON mcp_tools_invoked
+        +JSON skills_executed
+        +str final_recommendation
+        +float confidence_score
+        +datetime created_at
+    }
+
+    class OnChainZKReceipt {
+        +str zk_commitment_hash
+        +JSON public_inputs_json
+        +str tx_hash
+        +int block_number
+        +str network_name
+        +bool is_verified_on_chain
+    }
+
+    class Role {
+        <<enumeration>>
+        COOP_MEMBER
+        REGIONAL_AUDITOR
+        NATIONAL_ADMIN
+        AGENT_SERVICE
+    }
+
+    class MetricType {
+        <<enumeration>>
+        MOISTURE
+        FLOW
+        TEMP
+        STOCK
+    }
+
+    class Protocol {
+        <<enumeration>>
+        gRPC
+        REST
+        SIMULATOR
+    }
+
+    class Severity {
+        <<enumeration>>
+        LOW
+        MEDIUM
+        CRITICAL
+    }
+
+    class Trigger {
+        <<enumeration>>
+        DARJA_REQUEST
+        ANOMALY_ALERT
+        SCHEDULED
+        MANUAL
+    }
+
+    AbstractUser <|-- StakeholderUser
+    StakeholderUser "1" --> "0..*" ResourceNodePlot : owned_nodes
+    CooperativeUnit "1" --> "0..*" ResourceNodePlot : nodes
+    ResourceNodePlot "1" --> "0..*" TelemetryReading : readings
+    ResourceNodePlot "1" --> "0..*" AnomalyAndForecastEvent : anomalies
+    AgentLoopExecution "1" --> "0..1" OnChainZKReceipt : zk_receipt
+
+    StakeholderUser ..> Role
+    TelemetryReading ..> MetricType
+    TelemetryReading ..> Protocol
+    AnomalyAndForecastEvent ..> Severity
+    AgentLoopExecution ..> Trigger
+
+    note for CooperativeUnit "CHECK: daily_quota_limit is positive"
+    note for ResourceNodePlot "CHECK: allocated_share_pct between 0 and 100"
+    note for TelemetryReading "INDEX on node, metric_type, timestamp descending"
+    note for OnChainZKReceipt "OneToOne with AgentLoopExecution"
