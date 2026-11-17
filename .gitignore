@@ -28,3 +28,4 @@ broadcast/
 .vscode/
 .idea/
 *.swp
+docker-compose.override.yml

@@ -22,3 +22,5 @@ py-solc-x>=2.0.3
 streamlit>=1.39.0
 plotly>=5.24.1
 requests>=2.32.3
+python-dotenv>=1.0
+psycopg2-binary>=2.9

@@ -16,7 +16,15 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
+from tunisovereign_core.api_rest import (
+    RegisterView, SovereignTokenObtainPairView, darja_intent_webhook,
+)
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
+    path("api/auth/register/", RegisterView.as_view()),
+    path("api/auth/login/", SovereignTokenObtainPairView.as_view()),
+    path("api/auth/refresh/", TokenRefreshView.as_view()),
+    path("api/v1/darja-intent/", darja_intent_webhook),
 ]
