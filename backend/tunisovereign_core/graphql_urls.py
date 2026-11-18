@@ -1,4 +1,5 @@
 ﻿from django.urls import path
+from django.views.decorators.csrf import csrf_exempt
 from strawberry.django.views import AsyncGraphQLView
 from strawberry.dataloader import DataLoader
 
@@ -16,4 +17,6 @@ class TuniGraphQLView(AsyncGraphQLView):
         }
 
 
-urlpatterns = [path("", TuniGraphQLView.as_view(schema=schema))]
+urlpatterns = [
+    path("", csrf_exempt(TuniGraphQLView.as_view(schema=schema))),
+]
