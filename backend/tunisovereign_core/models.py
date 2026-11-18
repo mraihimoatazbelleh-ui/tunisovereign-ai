@@ -111,7 +111,12 @@ class AgentLoopExecution(models.Model):
         SCHEDULED = "SCHEDULED", "Scheduled run"
         MANUAL = "MANUAL", "Manual trigger"
 
+    
     thread_id = models.CharField(max_length=64, db_index=True)
+    node = models.ForeignKey(
+        ResourceNodePlot, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="agent_executions",
+    )
     trigger_source = models.CharField(max_length=64, choices=Trigger.choices)
     darja_transcript = models.TextField(blank=True)
     parsed_intent_json = models.JSONField(default=dict)

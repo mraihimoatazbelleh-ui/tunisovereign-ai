@@ -3,8 +3,15 @@
 import strawberry
 import strawberry_django
 
-from .models import CooperativeUnit, ResourceNodePlot, AnomalyAndForecastEvent
+from .models import (
+    CooperativeUnit,
+    ResourceNodePlot,
+    AnomalyAndForecastEvent,
+    OnChainZKReceipt,
+)
 
+
+# ---------- Loaders : une seule requete SQL par niveau ----------
 
 async def load_nodes(coop_ids):
     grouped = defaultdict(list)
@@ -18,9 +25,32 @@ async def load_anomalies(node_ids):
     qs = (AnomalyAndForecastEvent.objects
           .filter(node_id__in=node_ids).order_by("-detected_at"))
     async for a in qs:
-        if len(grouped[a.node_id]) < 10:
+        if len(grouped[a.node_id]) < 10:  # 10 dernieres anomalies par node
             grouped[a.node_id].append(a)
     return [grouped.get(n, []) for n in node_ids]
+
+
+async def load_receipts(node_ids):
+    grouped = defaultdict(list)
+    qs = (OnChainZKReceipt.objects
+          .filter(agent_execution__node_id__in=node_ids)
+          .select_related("agent_execution")
+          .order_by("-block_number"))
+    async for r in qs:
+        grouped[r.agent_execution.node_id].append(r)
+    return [grouped.get(n, []) for n in node_ids]
+
+
+# ---------- Types ----------
+
+@strawberry_django.type(OnChainZKReceipt)
+class ReceiptType:
+    id: strawberry.ID
+    zk_commitment_hash: str
+    tx_hash: str
+    block_number: int
+    network_name: str
+    is_verified_on_chain: bool
 
 
 @strawberry_django.type(AnomalyAndForecastEvent)
@@ -42,6 +72,10 @@ class NodeType:
     @strawberry.field
     async def anomalies(self, info: strawberry.Info) -> list[AnomalyType]:
         return await info.context["anomalies_loader"].load(self.id)
+
+    @strawberry.field
+    async def receipts(self, info: strawberry.Info) -> list[ReceiptType]:
+        return await info.context["receipts_loader"].load(self.id)
 
 
 @strawberry_django.type(CooperativeUnit)
