@@ -5,7 +5,7 @@ Exposes:
 - GET/POST /api/v1/cooperatives/, /api/v1/telemetry/, /api/v1/anomalies/, /api/v1/zk-receipts/
 - POST /api/v1/darja-intent/ (Ingests Tunisian Darja voice transcript or text and triggers LangGraph loop)
 """
-from rest_framework import serializers, viewsets, permissions, status
+from rest_framework import serializers, viewsets, permissions, status, generics 
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -35,7 +35,22 @@ class SovereignTokenObtainPairSerializer(TokenObtainPairSerializer):
         token["wallet_address"] = user.wallet_address or ""
         token["preferred_dialect"] = user.preferred_dialect
         return token
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
 
+    class Meta:
+        model = StakeholderUser
+        # Pas de "role" : sinon n'importe qui s'inscrirait en NATIONAL_ADMIN
+        fields = ["username", "email", "password", "governorate",
+                  "wallet_address", "preferred_dialect"]
+
+    def create(self, validated_data):
+        return StakeholderUser.objects.create_user(**validated_data)
+
+
+class RegisterView(generics.CreateAPIView):
+    serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
 
 class SovereignTokenObtainPairView(TokenObtainPairView):
     serializer_class = SovereignTokenObtainPairSerializer
