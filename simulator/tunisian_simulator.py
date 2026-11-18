@@ -1,58 +1,92 @@
-"""
-Tunisian Governorate Telemetry & Anomaly Stream Simulator
-Generates diurnal/seasonal telemetry across Kasserine, Sidi Bouzid, Gafsa, Kairouan, and Tozeur,
-injects controlled stress anomalies, and triggers the TuniSovereign-AI pipeline.
-"""
+"""Simulateur de télémétrie tunisienne : génère des mesures diurnes signées et les envoie par gRPC."""
+import argparse
 import hashlib
 import hmac
 import math
+import os
 import random
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
-GOVERNORATE_NODES = [
+# Mêmes node_code que backend/.../seed_demo.py
+NODES = [
     {"node_code": "KAS-SBEITLA-PLOT-04", "governorate": "Kasserine", "base_moisture": 54.0, "base_temp": 27.0},
-    {"node_code": "SBZ-REGUEB-PLOT-02", "governorate": "Sidi_Bouzid", "base_moisture": 52.0, "base_temp": 28.5},
-    {"node_code": "GAF-METLAOUI-NODE-01", "governorate": "Gafsa", "base_moisture": 49.0, "base_temp": 30.0},
-    {"node_code": "KAI-CHERARDA-PLOT-07", "governorate": "Kairouan", "base_moisture": 55.0, "base_temp": 27.5},
-    {"node_code": "TOZ-NEFTA-OASIS-03", "governorate": "Tozeur", "base_moisture": 48.0, "base_temp": 32.0},
+    {"node_code": "SBZ-REGUEB-PLOT-01", "governorate": "Sidi_Bouzid", "base_moisture": 52.0, "base_temp": 28.5},
+    {"node_code": "GAF-METLAOUI-PLOT-02", "governorate": "Gafsa", "base_moisture": 49.0, "base_temp": 30.0},
 ]
 
 
-def generate_telemetry_batch(hours: int = 24, inject_anomaly_at_hour: int = 14, secret_key: str = "tunisovereign-hmac") -> list:
-    rng = random.Random(42)
-    packets = []
+def sign(node_code, governorate, metric_type, value, iso_ts, secret):
+    payload = f"{node_code}|{governorate}|{metric_type}|{value:.2f}|{iso_ts}"
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def generate(hours=24, anomaly_hour=14, seed=42, secret="tunisovereign-hmac", tamper=False):
+    """Liste de dicts : un par (heure, nœud, métrique). Reproductible grâce à `seed`."""
+    rng = random.Random(seed)
+    start = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=hours)
+    out = []
     for h in range(hours):
-        for node in GOVERNORATE_NODES:
-            diurnal = math.sin(2 * math.pi * h / 24.0)
-            moisture = node["base_moisture"] + 5.0 * diurnal + rng.uniform(-1.5, 1.5)
-            temp_c = node["base_temp"] - 4.5 * math.cos(2 * math.pi * h / 24.0) + rng.uniform(-0.8, 0.8)
+        ts = start + timedelta(hours=h)
+        iso = ts.isoformat()
+        hod = ts.hour
+        for n in NODES:
+            moisture = n["base_moisture"] + 5.0 * math.sin(2 * math.pi * hod / 24) + rng.uniform(-1.5, 1.5)
+            temp = n["base_temp"] - 4.5 * math.cos(2 * math.pi * hod / 24) + rng.uniform(-0.8, 0.8)
+            pump_on = 6 <= hod < 10 or 17 <= hod < 20
+            flow = (120.0 if pump_on else 8.0) + rng.uniform(-3, 3)
 
-            if h in (inject_anomaly_at_hour, inject_anomaly_at_hour + 1) and node["governorate"] == "Kasserine":
-                moisture -= 24.5
-                temp_c += 9.5
+            if anomaly_hour is not None and h in (anomaly_hour, anomaly_hour + 1) and n["governorate"] == "Kasserine":
+                moisture -= 24.5   # fuite ou vol d'eau
+                temp += 9.5        # vague de chaleur (sirocco)
 
-            iso_ts = datetime.now(timezone.utc).isoformat()
-            payload_str = f"{node['node_code']}|{node['governorate']}|MOISTURE|{moisture:.2f}|{iso_ts}"
-            sig = hmac.new(secret_key.encode("utf-8"), payload_str.encode("utf-8"), hashlib.sha256).hexdigest()
+            for metric, value in (("MOISTURE", moisture), ("TEMP", temp), ("FLOW", max(0.0, flow))):
+                value = round(value, 2)
+                sig = "tampered" if tamper else sign(n["node_code"], n["governorate"], metric, value, iso, secret)
+                out.append({"node_code": n["node_code"], "governorate": n["governorate"],
+                            "metric_type": metric, "value": value, "iso_timestamp": iso, "signature_hmac": sig})
+    return out
 
-            packets.append({
-                "hour": h,
-                "node_code": node["node_code"],
-                "governorate": node["governorate"],
-                "metric_type": "MOISTURE",
-                "moisture_pct": round(moisture, 2),
-                "temp_c": round(temp_c, 2),
-                "iso_timestamp": iso_ts,
-                "signature_hmac": sig,
-            })
-    return packets
+
+def stream_to_grpc(packets, host):
+    import grpc
+    from grpc_service import tunisovereign_pb2 as pb, tunisovereign_pb2_grpc as pb_grpc
+
+    def gen():
+        for p in packets:
+            yield pb.TelemetryPacket(**p)
+
+    with grpc.insecure_channel(host) as channel:
+        stub = pb_grpc.TelemetryIngestServiceStub(channel)
+        return stub.StreamTelemetry(gen())
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Simulateur de télémétrie TuniSovereign")
+    ap.add_argument("--hours", type=int, default=24)
+    ap.add_argument("--anomaly-hour", type=int, default=14)
+    ap.add_argument("--no-anomaly", action="store_true")
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--host", default=os.getenv("GRPC_HOST", "localhost:50051"))
+    ap.add_argument("--dry-run", action="store_true", help="génère sans envoyer")
+    ap.add_argument("--tamper", action="store_true", help="fausse les signatures (test de rejet)")
+    a = ap.parse_args()
+
+    secret = os.getenv("GRPC_HMAC_SECRET", "tunisovereign-hmac")
+    packets = generate(a.hours, None if a.no_anomaly else a.anomaly_hour, a.seed, secret, a.tamper)
+    low = [p for p in packets if p["metric_type"] == "MOISTURE" and p["value"] < 35.0]
+    print(f"{len(packets)} paquets générés, {len(low)} sous le seuil critique (35 %).")
+
+    if a.dry_run:
+        return
+    ack = stream_to_grpc(packets, a.host)
+    print(f"accepted={ack.accepted_count} rejected={ack.rejected_count} "
+          f"anomaly={ack.anomaly_triggered} thread={ack.agent_thread_id}")
 
 
 if __name__ == "__main__":
-    batch = generate_telemetry_batch(hours=24, inject_anomaly_at_hour=14)
-    print(f"Generated {len(batch)} signed Tunisian telemetry packets across {len(GOVERNORATE_NODES)} governorates.")
-    anomalies = [p for p in batch if p["moisture_pct"] < 35.0]
-    print(f"Injected critical anomaly packets (<35% moisture): {len(anomalies)}")
-    if anomalies:
-        print("Sample critical packet:", anomalies[0])
+    main()

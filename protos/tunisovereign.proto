@@ -19,6 +19,7 @@ message IngestAck {
   int32 accepted_count = 1;
   bool anomaly_triggered = 2;
   string agent_thread_id = 3;
+  int32 rejected_count = 4;
 }
 
 message AuditRequest {
