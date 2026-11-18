@@ -3,7 +3,7 @@ from django.views.decorators.csrf import csrf_exempt
 from strawberry.django.views import AsyncGraphQLView
 from strawberry.dataloader import DataLoader
 
-from .graphql_schema import schema, load_nodes, load_anomalies
+from .graphql_schema import schema, load_nodes, load_anomalies, load_receipts
 
 
 class TuniGraphQLView(AsyncGraphQLView):
@@ -14,6 +14,7 @@ class TuniGraphQLView(AsyncGraphQLView):
             "response": response,
             "nodes_loader": DataLoader(load_fn=load_nodes),
             "anomalies_loader": DataLoader(load_fn=load_anomalies),
+            "receipts_loader": DataLoader(load_fn=load_receipts),
         }
 
 
