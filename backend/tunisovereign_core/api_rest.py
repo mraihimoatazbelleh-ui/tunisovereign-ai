@@ -74,6 +74,12 @@ class CooperativeUnitSerializer(serializers.ModelSerializer):
     class Meta:
         model = CooperativeUnit
         fields = "__all__"
+        read_only_fields = ["id", "created_at"]
+
+    def validate_daily_quota_limit(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Le quota doit être strictement positif.")
+        return value
 
 
 class ResourceNodePlotSerializer(serializers.ModelSerializer):
@@ -87,6 +93,13 @@ class TelemetryReadingSerializer(serializers.ModelSerializer):
         model = TelemetryReading
         fields = "__all__"
 
+    def validate(self, data):
+        if data.get("metric_type") == TelemetryReading.MetricType.SOIL_MOISTURE:
+            if not 0 <= data["value"] <= 100:
+                raise serializers.ValidationError(
+                    {"value": "L'humidité doit être comprise entre 0 et 100."}
+                )
+        return data
 
 class AnomalyAndForecastEventSerializer(serializers.ModelSerializer):
     class Meta:
@@ -115,24 +128,27 @@ class CooperativeUnitViewSet(viewsets.ModelViewSet):
     queryset = CooperativeUnit.objects.all().order_by("-created_at")
     serializer_class = CooperativeUnitSerializer
     permission_classes = [IsCoopMember]
+    filterset_fields = ["governorate"]
 
 
 class TelemetryReadingViewSet(viewsets.ModelViewSet):
     queryset = TelemetryReading.objects.select_related("node").order_by("-timestamp")
     serializer_class = TelemetryReadingSerializer
     permission_classes = [IsCoopMember]
+    filterset_fields = ["node", "metric_type"]
 
 
 class AnomalyAndForecastEventViewSet(viewsets.ModelViewSet):
     queryset = AnomalyAndForecastEvent.objects.select_related("node").order_by("-detected_at")
     serializer_class = AnomalyAndForecastEventSerializer
     permission_classes = [IsRegionalAuditor]
-
+    filterset_fields = ["node", "severity"]
 
 class OnChainZKReceiptViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OnChainZKReceipt.objects.select_related("agent_execution").order_by("-block_number")
     serializer_class = OnChainZKReceiptSerializer
     permission_classes = [IsCoopMember]
+    filterset_fields = ["network_name", "is_verified_on_chain"]
 
 
 @api_view(["POST"])
@@ -145,6 +161,11 @@ def darja_intent_webhook(request):
     and returns the structured execution trace and on-chain receipt.
     """
     payload = request.data
+    if not (payload.get("darja_input") or payload.get("text")):
+        return Response(
+            {"error": "darja_input requis"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     state_out = run_sovereign_agent_loop({
         "thread_id": payload.get("thread_id", "drf-darja-webhook-001"),
         "node_code": payload.get("node_code", "KAS-SBEITLA-PLOT-04"),

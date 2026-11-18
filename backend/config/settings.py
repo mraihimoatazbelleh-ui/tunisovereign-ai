@@ -37,6 +37,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    "rest_framework",
+    "django_filters",
+    "strawberry_django",
     "tunisovereign_core",
 ]
 
@@ -127,3 +130,8 @@ MAILERS = {
     },
 }
 AUTH_USER_MODEL = "tunisovereign_core.StakeholderUser"
+REST_FRAMEWORK = {
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,
+}
