@@ -20,7 +20,7 @@ from .models import (
     AgentLoopExecution,
     OnChainZKReceipt,
 )
-from agent.langgraph_agent import run_sovereign_agent_loop
+
 
 
 # ============================================================================
@@ -165,6 +165,13 @@ def darja_intent_webhook(request):
         return Response(
             {"error": "darja_input requis"},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+        try:
+            from agent.langgraph_agent import run_sovereign_agent_loop
+        except ImportError:
+         return Response(
+            {"error": "Agent LangGraph pas encore disponible"},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     state_out = run_sovereign_agent_loop({
         "thread_id": payload.get("thread_id", "drf-darja-webhook-001"),
