@@ -38,14 +38,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    "rest_framework",
-    "django_filters",
-    "strawberry_django",
-    "tunisovereign_core",
+    'django_filters',
+    'strawberry_django',
     'rest_framework',
     'rest_framework_simplejwt',
-    'corsheaders',
     'tunisovereign_core',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [

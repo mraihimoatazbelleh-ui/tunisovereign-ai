@@ -50,10 +50,10 @@ def run_sovereign_agent_loop(initial_state: SovereignAgentState) -> SovereignAge
     gov = state["parsed_intent"]["governorate"]
     req_units = state["parsed_intent"]["requested_units"]
     mcp_res = calculate_sovereign_quota_allocation(
-        governorate=gov,
-        soil_moisture_pct=state["moisture_pct"],
-        temp_c=state["temp_c"],
-        requested_units=req_units,
+    governorate=gov,
+    current_metric_value=state["moisture_pct"],
+    ambient_temp_c=state["temp_c"],
+    requested_units=req_units,
     )
     state["mcp_allocation"] = mcp_res
     state["skills_trace"].append("FastMCP::calculate_sovereign_quota_allocation")
@@ -63,19 +63,24 @@ def run_sovereign_agent_loop(initial_state: SovereignAgentState) -> SovereignAge
     state["zk_receipt"] = s3.execute(
         node_code=state["node_code"],
         governorate=gov,
-        approved_units=mcp_res["approved_units"],
+        approved_units=(
+            mcp_res["recommended_units"]
+            if mcp_res["within_quota"]
+            else 0.0),
         max_quota=mcp_res["max_daily_quota"],
         thread_id=state["thread_id"],
     )
     state["skills_trace"].append(s3.skill_name)
 
     state["final_explanation"] = (
-        f"[TuniSovereign-AI Agent | Thread {state['thread_id']}] "
         f"Parsed Darja request for {gov} (Node {state['node_code']}). "
         f"Anomaly status: {state['anomaly_report']['severity']} "
         f"(confidence={state['anomaly_report']['anomaly_confidence']}). "
-        f"MCP approved {mcp_res['approved_units']} units (<= {mcp_res['max_daily_quota']} max quota). "
-        f"Anchored ZK Commitment {state['zk_receipt']['zk_commitment_hash'][:18]}... "
+        f"MCP recommended {mcp_res['recommended_units']} units "
+        f"(within quota: {mcp_res['within_quota']}, "
+        f"max quota: {mcp_res['max_daily_quota']}). "
+        f"Anchored ZK Commitment "
+        f"{state['zk_receipt']['zk_commitment_hash'][:18]}... "
         f"in Tx {state['zk_receipt']['tx_hash'][:18]}..."
     )
     return state

@@ -166,6 +166,7 @@ class OnChainZKReceiptViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ["network_name", "is_verified_on_chain"]
 
 
+
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
 def darja_intent_webhook(request):
@@ -176,24 +177,27 @@ def darja_intent_webhook(request):
     and returns the structured execution trace and on-chain receipt.
     """
     payload = request.data
+
     if not (payload.get("darja_input") or payload.get("text")):
         return Response(
             {"error": "darja_input requis"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-        try:
-            from agent.langgraph_agent import run_sovereign_agent_loop
-        except ImportError:
-         return Response(
+
+    try:
+        from agent.langgraph_agent import run_sovereign_agent_loop
+    except ImportError:
+        return Response(
             {"error": "Agent LangGraph pas encore disponible"},
             status=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
+
     state_out = run_sovereign_agent_loop({
         "thread_id": payload.get("thread_id", "drf-darja-webhook-001"),
         "node_code": payload.get("node_code", "KAS-SBEITLA-PLOT-04"),
         "darja_input": payload.get(
             "darja_input",
-            "Ya khouya fi Kasserine el sonda habtet 28% wel skhana 37 darja, lazmenna maa urgent!",
+            payload.get("text", ""),
         ),
         "moisture_pct": float(payload.get("moisture_pct", 28.4)),
         "temp_c": float(payload.get("temp_c", 37.2)),
@@ -205,4 +209,5 @@ def darja_intent_webhook(request):
         "skills_trace": [],
         "final_explanation": "",
     })
+
     return Response(state_out, status=status.HTTP_200_OK)
