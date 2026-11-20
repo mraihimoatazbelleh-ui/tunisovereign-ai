@@ -5,7 +5,7 @@ Exposes:
 - GET/POST /api/v1/cooperatives/, /api/v1/telemetry/, /api/v1/anomalies/, /api/v1/zk-receipts/
 - POST /api/v1/darja-intent/ (Ingests Tunisian Darja voice transcript or text and triggers LangGraph loop)
 """
-from rest_framework import serializers, viewsets, permissions, status, generics 
+from rest_framework import serializers, viewsets, permissions, status, generics
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -142,22 +142,37 @@ class AgentLoopExecutionSerializer(serializers.ModelSerializer):
 class CooperativeUnitViewSet(viewsets.ModelViewSet):
     queryset = CooperativeUnit.objects.all().order_by("-created_at")
     serializer_class = CooperativeUnitSerializer
-    permission_classes = [IsCoopMember]
     filterset_fields = ["governorate"]
+
+    def get_permissions(self):
+        # Read: any authenticated member. Write: national admin only.
+        if self.action in ("list", "retrieve"):
+            return [IsCoopMember()]
+        return [IsNationalAdmin()]
 
 
 class TelemetryReadingViewSet(viewsets.ModelViewSet):
     queryset = TelemetryReading.objects.select_related("node").order_by("-timestamp")
     serializer_class = TelemetryReadingSerializer
-    permission_classes = [IsCoopMember]
     filterset_fields = ["node", "metric_type"]
+
+    def get_permissions(self):
+        # Read: any authenticated member. Write: auditor, admin or agent service.
+        if self.action in ("list", "retrieve"):
+            return [IsCoopMember()]
+        return [IsRegionalAuditor()]
 
 
 class AnomalyAndForecastEventViewSet(viewsets.ModelViewSet):
     queryset = AnomalyAndForecastEvent.objects.select_related("node").order_by("-detected_at")
     serializer_class = AnomalyAndForecastEventSerializer
-    permission_classes = [IsRegionalAuditor]
     filterset_fields = ["node", "severity"]
+
+    def get_permissions(self):
+        # Read: auditor, admin or agent service. Write: national admin only.
+        if self.action in ("list", "retrieve"):
+            return [IsRegionalAuditor()]
+        return [IsNationalAdmin()]
 
 class OnChainZKReceiptViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = OnChainZKReceipt.objects.select_related("agent_execution").order_by("-block_number")

@@ -1,4 +1,4 @@
-﻿from django.utils import timezone
+from django.utils import timezone
 from rest_framework.test import APITestCase
 from unittest.mock import patch
 import builtins
@@ -13,6 +13,8 @@ class RestApiTests(APITestCase):
             username="member", password="x", role="COOP_MEMBER")
         self.auditor = StakeholderUser.objects.create_user(
             username="auditor", password="x", role="REGIONAL_AUDITOR")
+        self.admin = StakeholderUser.objects.create_user(
+            username="admin", password="x", role="NATIONAL_ADMIN")
         self.coop = CooperativeUnit.objects.create(
             name="Coop Test", governorate="Kasserine", daily_quota_limit=4000)
         self.node = ResourceNodePlot.objects.create(
@@ -46,14 +48,16 @@ class RestApiTests(APITestCase):
         self.assertEqual(r.json()["count"], 1)
 
     def test_create_cooperative_201(self):
-        self.client.force_authenticate(self.member)
+        # Only a national admin may create a cooperative.
+        self.client.force_authenticate(self.admin)
         r = self.client.post("/api/v1/cooperatives/", {
             "name": "Nouvelle", "governorate": "Gafsa",
             "daily_quota_limit": 4200}, format="json")
         self.assertEqual(r.status_code, 201)
 
     def test_negative_quota_400(self):
-        self.client.force_authenticate(self.member)
+        # Permission is checked before validation, so use an admin.
+        self.client.force_authenticate(self.admin)
         r = self.client.post("/api/v1/cooperatives/", {
             "name": "Bad", "governorate": "Gafsa",
             "daily_quota_limit": -5}, format="json")
@@ -80,7 +84,8 @@ class RestApiTests(APITestCase):
         self.assertEqual(r.json()["count"], 1)
 
     def test_moisture_out_of_range_400(self):
-        self.client.force_authenticate(self.member)
+        # Telemetry writes need an auditor, admin or agent service.
+        self.client.force_authenticate(self.auditor)
         r = self.client.post("/api/v1/telemetry/", {
             "node": self.node.id, "timestamp": "2026-11-18T10:00:00Z",
             "metric_type": "MOISTURE", "value": 150}, format="json")
@@ -89,6 +94,7 @@ class RestApiTests(APITestCase):
     def test_darja_empty_400(self):
         r = self.client.post("/api/v1/darja-intent/", {}, format="json")
         self.assertEqual(r.status_code, 400)
+
     def test_darja_agent_unavailable_503(self):
         original_import = builtins.__import__
         def mocked_import(name, *args, **kwargs):
