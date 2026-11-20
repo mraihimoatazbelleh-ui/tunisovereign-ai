@@ -16,7 +16,7 @@ sequenceDiagram
     alt Anomaly detected
         ML->>DB: create AnomalyAndForecastEvent
         ML->>AGT: trigger run (ANOMALY_ALERT)
-        AGT->>DB: create AgentLoopExecution (empty recommendation, confidence 0)
+        AGT->>DB: create AgentLoopExecution linked to the node (empty recommendation, confidence 0)
         AGT->>MCP: call tool to read quota of the cooperative
         MCP->>DB: read CooperativeUnit and ResourceNodePlot
         DB-->>MCP: daily_quota_limit and allocated share
