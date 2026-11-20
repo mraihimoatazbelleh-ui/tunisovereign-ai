@@ -1,4 +1,4 @@
-﻿from collections import defaultdict
+from collections import defaultdict
 
 import strawberry
 import strawberry_django
@@ -7,8 +7,17 @@ from .models import (
     CooperativeUnit,
     ResourceNodePlot,
     AnomalyAndForecastEvent,
+    AgentLoopExecution,
     OnChainZKReceipt,
 )
+
+# Same rule as the REST API: anomalies and agent traces are not for field members.
+PRIVILEGED_ROLES = {"REGIONAL_AUDITOR", "NATIONAL_ADMIN", "AGENT_SERVICE"}
+
+
+def require_privileged(info: strawberry.Info, what: str):
+    if info.context.get("role") not in PRIVILEGED_ROLES:
+        raise PermissionError(f"Your role is not allowed to read {what}.")
 
 
 # ---------- Loaders : une seule requete SQL par niveau ----------
@@ -27,6 +36,16 @@ async def load_anomalies(node_ids):
     async for a in qs:
         if len(grouped[a.node_id]) < 10:  # 10 dernieres anomalies par node
             grouped[a.node_id].append(a)
+    return [grouped.get(n, []) for n in node_ids]
+
+
+async def load_executions(node_ids):
+    grouped = defaultdict(list)
+    qs = (AgentLoopExecution.objects
+          .filter(node_id__in=node_ids).order_by("-created_at"))
+    async for e in qs:
+        if len(grouped[e.node_id]) < 10:  # 10 dernieres executions par node
+            grouped[e.node_id].append(e)
     return [grouped.get(n, []) for n in node_ids]
 
 
@@ -62,6 +81,16 @@ class AnomalyType:
     forecasted_deficit_24h: float
 
 
+@strawberry_django.type(AgentLoopExecution)
+class ExecutionType:
+    id: strawberry.ID
+    thread_id: str
+    trigger_source: str
+    darja_transcript: str
+    final_recommendation: str
+    confidence_score: float
+
+
 @strawberry_django.type(ResourceNodePlot)
 class NodeType:
     id: strawberry.ID
@@ -70,8 +99,14 @@ class NodeType:
     is_valve_or_dispatch_active: bool
 
     @strawberry.field
-    async def anomalies(self, info: strawberry.Info) -> list[AnomalyType]:
+    async def anomalies(self, info: strawberry.Info) -> list[AnomalyType] | None:
+        require_privileged(info, "anomalies")
         return await info.context["anomalies_loader"].load(self.id)
+
+    @strawberry.field
+    async def executions(self, info: strawberry.Info) -> list[ExecutionType] | None:
+        require_privileged(info, "agent executions")
+        return await info.context["executions_loader"].load(self.id)
 
     @strawberry.field
     async def receipts(self, info: strawberry.Info) -> list[ReceiptType]:

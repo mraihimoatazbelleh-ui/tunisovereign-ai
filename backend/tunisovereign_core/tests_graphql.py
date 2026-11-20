@@ -1,19 +1,28 @@
-﻿from django.test import TransactionTestCase
-from django.test.utils import CaptureQueriesContext
 from django.db import connection
+from django.test import TransactionTestCase
+from django.test.utils import CaptureQueriesContext
 
+from .api_rest import SovereignTokenObtainPairSerializer
 from .models import (
     CooperativeUnit, ResourceNodePlot, StakeholderUser,
     AnomalyAndForecastEvent, AgentLoopExecution, OnChainZKReceipt,
 )
 
+Role = StakeholderUser.Role
 
-class GraphQLQueryCountTest(TransactionTestCase):
-    QUERY = """
-    { cooperatives { name nodes { nodeCode
-        anomalies { severity }
-        receipts { txHash } } } }
-    """
+
+def bearer(user):
+    """Authorization header carrying the same custom claims as /api/auth/login/."""
+    token = SovereignTokenObtainPairSerializer.get_token(user).access_token
+    return {"HTTP_AUTHORIZATION": f"Bearer {token}"}
+
+
+class GraphQLBase(TransactionTestCase):
+    def setUp(self):
+        self.auditor = StakeholderUser.objects.create_user(
+            username="gql_auditor", password="x", role=Role.REGIONAL_AUDITOR)
+        self.member = StakeholderUser.objects.create_user(
+            username="gql_member", password="x", role=Role.COOP_MEMBER)
 
     def _seed(self, prefix, n_coops):
         owner, _ = StakeholderUser.objects.get_or_create(username="owner_test")
@@ -36,10 +45,23 @@ class GraphQLQueryCountTest(TransactionTestCase):
                     tx_hash=f"0xt{prefix}{i}{j}",
                     block_number=1)
 
+    def post(self, query, user=None):
+        extra = bearer(user) if user else {}
+        return self.client.post("/graphql/", {"query": query},
+                                content_type="application/json", **extra)
+
+
+class GraphQLQueryCountTest(GraphQLBase):
+    QUERY = """
+    { cooperatives { name nodes { nodeCode
+        anomalies { severity }
+        executions { threadId finalRecommendation }
+        receipts { txHash } } } }
+    """
+
     def _run(self):
         with CaptureQueriesContext(connection) as ctx:
-            r = self.client.post("/graphql/", {"query": self.QUERY},
-                                 content_type="application/json")
+            r = self.post(self.QUERY, self.auditor)
         self.assertEqual(r.status_code, 200)
         body = r.json()
         self.assertNotIn("errors", body)
@@ -54,3 +76,43 @@ class GraphQLQueryCountTest(TransactionTestCase):
         node = body["data"]["cooperatives"][0]["nodes"][0]
         self.assertTrue(node["receipts"])
         self.assertTrue(node["anomalies"])
+        self.assertTrue(node["executions"])
+
+
+class GraphQLSecurityTest(GraphQLBase):
+    def test_request_without_token_is_rejected(self):
+        self._seed("S", 1)
+        r = self.post("{ cooperatives { name } }")
+        self.assertEqual(r.status_code, 401)
+
+    def test_request_with_invalid_token_is_rejected(self):
+        r = self.client.post("/graphql/", {"query": "{ cooperatives { name } }"},
+                             content_type="application/json",
+                             HTTP_AUTHORIZATION="Bearer not-a-real-token")
+        self.assertEqual(r.status_code, 401)
+
+    def test_coop_member_can_read_cooperatives_and_receipts(self):
+        self._seed("M", 1)
+        r = self.post("{ cooperatives { name nodes { nodeCode receipts { txHash } } } }",
+                      self.member)
+        body = r.json()
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn("errors", body)
+        self.assertTrue(body["data"]["cooperatives"][0]["nodes"][0]["receipts"])
+
+    def test_coop_member_cannot_read_anomalies(self):
+        self._seed("N", 1)
+        r = self.post("{ cooperatives { nodes { nodeCode anomalies { severity } } } }",
+                      self.member)
+        body = r.json()
+        self.assertIn("errors", body)
+        node = body["data"]["cooperatives"][0]["nodes"][0]
+        self.assertIsNone(node["anomalies"])
+
+    def test_coop_member_cannot_read_agent_executions(self):
+        self._seed("E", 1)
+        r = self.post("{ cooperatives { nodes { executions { threadId } } } }",
+                      self.member)
+        body = r.json()
+        self.assertIn("errors", body)
+        self.assertIsNone(body["data"]["cooperatives"][0]["nodes"][0]["executions"])
