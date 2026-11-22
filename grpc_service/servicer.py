@@ -6,6 +6,7 @@ import uuid
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from datetime import timezone as dt_timezone
 
 from tunisovereign_core.models import ResourceNodePlot, TelemetryReading
 from grpc_service import tunisovereign_pb2 as pb
@@ -40,7 +41,7 @@ class TelemetryIngestServicer(pb_grpc.TelemetryIngestServiceServicer):
                     rejected += 1
                     continue
                 if timezone.is_naive(ts):
-                    ts = timezone.make_aware(ts, timezone.utc)
+                    ts = timezone.make_aware(ts,dt_timezone.utc)
 
                 if p.node_code not in nodes:
                     nodes[p.node_code] = ResourceNodePlot.objects.filter(node_code=p.node_code).first()
