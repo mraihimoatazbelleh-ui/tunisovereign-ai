@@ -9,7 +9,7 @@ Projet TuniSovereign-AI, Track 1 TunicChain-Sovereign. Ce document dit ce qui a 
 - **REST (DRF)** : ViewSets, filtres, validation, codes 200, 201, 400, 403 et 404. 12 tests dans `tests_rest.py`.
 - **GraphQL** : DataLoader, nombre de requêtes SQL constant quand les données augmentent (test dans `tests_graphql.py`).
 - **gRPC et simulateur** : le simulateur envoie 216 paquets signés (HMAC) au serveur gRPC. Résultat : `accepted=216 rejected=0`, et 216 lignes `TelemetryReading` avec `ingestion_protocol='gRPC'` en base. Avec `--tamper`, les 216 paquets sont rejetés.
-- **Suite complète** : `python manage.py test` donne 44 tests `OK` sur `main`.
+- **Suite complète** : `python manage.py test` donne 52 tests `OK` sur `main`.
 
 ## Correctif en cours
 
