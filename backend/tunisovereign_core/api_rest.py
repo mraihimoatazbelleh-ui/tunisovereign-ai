@@ -35,6 +35,8 @@ class SovereignTokenObtainPairSerializer(TokenObtainPairSerializer):
         token["wallet_address"] = user.wallet_address or ""
         token["preferred_dialect"] = user.preferred_dialect
         return token
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
 
@@ -51,6 +53,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [permissions.AllowAny]
+
 
 class SovereignTokenObtainPairView(TokenObtainPairView):
     serializer_class = SovereignTokenObtainPairSerializer
@@ -183,7 +186,7 @@ class OnChainZKReceiptViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 @api_view(["POST"])
-@permission_classes([permissions.AllowAny])
+@permission_classes([IsCoopMember])
 def darja_intent_webhook(request):
     """
     POST /api/v1/darja-intent/
@@ -196,6 +199,16 @@ def darja_intent_webhook(request):
     if not (payload.get("darja_input") or payload.get("text")):
         return Response(
             {"error": "darja_input requis"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        moisture = float(payload.get("moisture_pct", 28.4))
+        temp = float(payload.get("temp_c", 37.2))
+        flow = float(payload.get("flow_l_min", 182.0))
+    except (TypeError, ValueError):
+        return Response(
+            {"error": "moisture_pct, temp_c et flow_l_min doivent être des nombres"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -214,9 +227,9 @@ def darja_intent_webhook(request):
             "darja_input",
             payload.get("text", ""),
         ),
-        "moisture_pct": float(payload.get("moisture_pct", 28.4)),
-        "temp_c": float(payload.get("temp_c", 37.2)),
-        "flow_l_min": float(payload.get("flow_l_min", 182.0)),
+        "moisture_pct": moisture,
+        "temp_c": temp,
+        "flow_l_min": flow,
         "parsed_intent": {},
         "anomaly_report": {},
         "mcp_allocation": {},
