@@ -51,3 +51,14 @@ class StreamTelemetryTests(TestCase):
 
     def test_normal_moisture_no_anomaly(self):
         self.assertFalse(self.call(packet(value=50.0)).anomaly_triggered)
+
+    def test_naive_timestamp_is_accepted(self):
+        naive_ts = "2026-11-25T10:00:00"  # sans fuseau
+        p = pb.TelemetryPacket(
+            node_code="TEST-NODE-1", governorate="Kasserine",
+            metric_type="MOISTURE", value=50.0, iso_timestamp=naive_ts,
+            signature_hmac=sign_packet("TEST-NODE-1", "Kasserine", "MOISTURE", 50.0, naive_ts),
+        )
+        ack = self.call(p)
+        self.assertEqual((ack.accepted_count, ack.rejected_count), (1, 0))
+        self.assertTrue(TelemetryReading.objects.get().timestamp.tzinfo is not None)    
