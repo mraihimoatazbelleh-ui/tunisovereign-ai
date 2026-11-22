@@ -91,16 +91,33 @@ class RestApiTests(APITestCase):
             "metric_type": "MOISTURE", "value": 150}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    # --- webhook /api/v1/darja-intent/ (JWT requis) --------------------------
+    def test_darja_requires_authentication(self):
+        r = self.client.post("/api/v1/darja-intent/", {"text": "x"}, format="json")
+        self.assertEqual(r.status_code, 401)
+
     def test_darja_empty_400(self):
+        self.client.force_authenticate(self.member)
         r = self.client.post("/api/v1/darja-intent/", {}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_darja_non_numeric_sensor_value_400(self):
+        self.client.force_authenticate(self.member)
+        r = self.client.post(
+            "/api/v1/darja-intent/",
+            {"text": "nheb nsqi", "moisture_pct": "abc"}, format="json",
+        )
+        self.assertEqual(r.status_code, 400)
+
     def test_darja_agent_unavailable_503(self):
+        self.client.force_authenticate(self.member)
         original_import = builtins.__import__
+
         def mocked_import(name, *args, **kwargs):
             if name == "agent.langgraph_agent":
                 raise ImportError("Agent indisponible")
             return original_import(name, *args, **kwargs)
+
         with patch("builtins.__import__", side_effect=mocked_import):
             r = self.client.post(
                 "/api/v1/darja-intent/",
